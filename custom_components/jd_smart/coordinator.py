@@ -145,7 +145,6 @@ class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
         if snapshot is not None:
             self.async_set_updated_data(snapshot)
         self.trigger_fast_polling()
-        await self.async_request_refresh()
 
     async def _async_refresh_token(self) -> None:
         """Refresh token and persist the refreshed values."""
