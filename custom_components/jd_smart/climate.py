@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import JdSmartConfigEntry
 from .entity import JdSmartEntity
+from .const import LOGGER
 
 MODE_TO_HVAC = {
     "0": HVACMode.COOL,
@@ -129,6 +130,7 @@ class JdSmartClimate(JdSmartEntity, ClimateEntity):
     def __init__(self, coordinator) -> None:
         """Initialize climate."""
         super().__init__(coordinator, "climate")
+        self._last_unknown_signature: tuple[str | None, str | None, tuple[str, ...]] | None = None
 
     @property
     def current_temperature(self) -> float | None:
@@ -152,13 +154,30 @@ class JdSmartClimate(JdSmartEntity, ClimateEntity):
     @property
     def hvac_mode(self) -> HVACMode | None:
         """Return HVAC mode."""
+        if not self.streams:
+            return None
         if self._uses_yair_streams:
             if self.streams.get("state") == "0":
                 return HVACMode.OFF
-            return YAIR_MODE_TO_HVAC.get(self.streams.get("model", ""))
+            model = self.streams.get("model", "")
+            hvac_mode = YAIR_MODE_TO_HVAC.get(model)
+            if hvac_mode is None:
+                self._log_unknown_yair_hvac_mode()
+            return hvac_mode
         if self.streams.get("power") == "0":
             return HVACMode.OFF
-        return MODE_TO_HVAC.get(self.streams.get("mode", ""))
+        mode = self.streams.get("mode", "")
+        hvac_mode = MODE_TO_HVAC.get(mode)
+        if hvac_mode is None:
+            LOGGER.warning(
+                "JD Smart HVAC mode unknown: feed_id=%s, power=%s, mode=%s, "
+                "stream_keys=%s",
+                self.coordinator.feed_id,
+                self.streams.get("power"),
+                mode,
+                sorted(self.streams),
+            )
+        return hvac_mode
 
     @property
     def fan_mode(self) -> str | None:
@@ -232,6 +251,13 @@ class JdSmartClimate(JdSmartEntity, ClimateEntity):
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
+        LOGGER.info(
+            "JD Smart set temperature requested: feed_id=%s, temperature=%s, "
+            "streams=%s",
+            self.coordinator.feed_id,
+            temperature,
+            _debug_streams(self.streams),
+        )
         if self._uses_yair_streams:
             await self._control({"setTemperature": int(temperature)})
             return
@@ -239,6 +265,13 @@ class JdSmartClimate(JdSmartEntity, ClimateEntity):
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set HVAC mode."""
+        LOGGER.info(
+            "JD Smart set HVAC mode requested: feed_id=%s, hvac_mode=%s, "
+            "streams=%s",
+            self.coordinator.feed_id,
+            hvac_mode,
+            _debug_streams(self.streams),
+        )
         if self._uses_yair_streams:
             if hvac_mode == HVACMode.OFF:
                 await self._control({"setSwitch": "false"})
@@ -276,10 +309,36 @@ class JdSmartClimate(JdSmartEntity, ClimateEntity):
 
     async def _control(self, commands: dict[str, object]) -> None:
         """Control helper."""
+        LOGGER.info(
+            "JD Smart climate control dispatch: feed_id=%s, commands=%s",
+            self.coordinator.feed_id,
+            commands,
+        )
         try:
             await self.coordinator.async_control_streams(commands)
         except Exception as err:
             raise HomeAssistantError("Unable to control JD Smart") from err
+
+    def _log_unknown_yair_hvac_mode(self) -> None:
+        """Log Yair HVAC unknown reason once per unique stream state."""
+        signature = (
+            self.streams.get("state"),
+            self.streams.get("model"),
+            tuple(sorted(self.streams)),
+        )
+        if signature == self._last_unknown_signature:
+            return
+        self._last_unknown_signature = signature
+        LOGGER.warning(
+            "JD Smart Yair HVAC mode unknown: feed_id=%s, state=%s, model=%s, "
+            "status=%s, stream_keys=%s, streams=%s",
+            self.coordinator.feed_id,
+            self.streams.get("state"),
+            self.streams.get("model"),
+            self.coordinator.data.status if self.coordinator.data else None,
+            sorted(self.streams),
+            _debug_streams(self.streams),
+        )
 
     async def _set_yair_swing_mode(self, swing_mode: str) -> None:
         """Set combined Yair horizontal and vertical swing mode."""
@@ -329,3 +388,19 @@ def _temperature_or_none(value: str | None) -> float | None:
     if value is None:
         return None
     return _float_or_none(value.removesuffix("°C"))
+
+
+def _debug_streams(streams: dict[str, str]) -> dict[str, str | None]:
+    """Return stream subset useful for control debugging."""
+    keys = (
+        "state",
+        "model",
+        "temperature",
+        "indoor_temperature",
+        "wind_speed",
+        "wind_orientation_horizontal",
+        "wind_orientation_vertical",
+        "error",
+        "code",
+    )
+    return {key: streams.get(key) for key in keys if key in streams}

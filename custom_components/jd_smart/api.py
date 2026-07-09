@@ -924,12 +924,13 @@ class JdSmartClient:
         result = json.loads(payload["result"])
         LOGGER.info(
             "JD Smart control result: feed_id=%s, control_ret=%s, "
-            "status=%s, has_streams=%s, digest=%s",
+            "status=%s, has_streams=%s, digest=%s, streams=%s",
             feed_id,
             result.get("control_ret"),
             result.get("status"),
             "streams" in result,
             result.get("digest"),
+            _debug_result_streams(result),
         )
         if "streams" in result:
             return JdSmartSnapshot.from_result(result, default_status="1")
@@ -950,6 +951,27 @@ def _truncate(value: str, limit: int = 1000) -> str:
     if len(value) <= limit:
         return value
     return f"{value[:limit]}..."
+
+
+def _debug_result_streams(result: dict[str, Any]) -> dict[str, str | None]:
+    """Return stream subset useful for control debugging."""
+    streams = {
+        item["stream_id"]: str(item.get("current_value", ""))
+        for item in result.get("streams", [])
+        if isinstance(item, dict) and "stream_id" in item
+    }
+    keys = (
+        "state",
+        "model",
+        "temperature",
+        "indoor_temperature",
+        "wind_speed",
+        "wind_orientation_horizontal",
+        "wind_orientation_vertical",
+        "error",
+        "code",
+    )
+    return {key: streams.get(key) for key in keys if key in streams}
 
 
 def _parse_devices(data: Any) -> list[JdSmartDevice]:

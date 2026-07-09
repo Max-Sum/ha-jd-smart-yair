@@ -78,6 +78,7 @@ class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
         digest = self.data.digest if self.data else ""
         try:
             snapshot = await self.client.async_get_snapshot(self.feed_id, digest)
+            snapshot = self._merge_empty_streams(snapshot)
             self._consecutive_update_failures = 0
             return snapshot
         except JdSmartAuthError:
@@ -85,6 +86,7 @@ class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
             try:
                 await self._async_refresh_token()
                 snapshot = await self.client.async_get_snapshot(self.feed_id, digest)
+                snapshot = self._merge_empty_streams(snapshot)
                 self._consecutive_update_failures = 0
                 return snapshot
             except JdSmartAuthError as refresh_err:
@@ -143,8 +145,37 @@ class JdSmartCoordinator(DataUpdateCoordinator[JdSmartSnapshot]):
             )
             raise UpdateFailed("Unable to control JD Smart") from err
         if snapshot is not None:
+            LOGGER.info(
+                "JD Smart coordinator applying control snapshot: feed_id=%s, "
+                "status=%s, digest=%s, streams=%s",
+                self.feed_id,
+                snapshot.status,
+                snapshot.digest,
+                _debug_streams(snapshot.streams),
+            )
             self.async_set_updated_data(snapshot)
+        else:
+            LOGGER.info(
+                "JD Smart control returned no snapshot: feed_id=%s, commands=%s",
+                self.feed_id,
+                commands,
+            )
         self.trigger_fast_polling()
+
+    def _merge_empty_streams(self, snapshot: JdSmartSnapshot) -> JdSmartSnapshot:
+        """Keep previous stream values when a digest poll returns no streams."""
+        if snapshot.streams or self.data is None or not self.data.streams:
+            return snapshot
+        LOGGER.info(
+            "JD Smart snapshot returned no streams; keeping previous streams: "
+            "feed_id=%s, digest=%s, previous_digest=%s, status=%s",
+            self.feed_id,
+            snapshot.digest,
+            self.data.digest,
+            snapshot.status,
+        )
+        snapshot.streams = self.data.streams
+        return snapshot
 
     async def _async_refresh_token(self) -> None:
         """Refresh token and persist the refreshed values."""
@@ -239,3 +270,19 @@ def _updated_auth_data(data: dict, new_tgt: str, new_cookie: str) -> dict:
     else:
         updated.pop(CONF_COOKIE, None)
     return updated
+
+
+def _debug_streams(streams: dict[str, str]) -> dict[str, str | None]:
+    """Return stream subset useful for control debugging."""
+    keys = (
+        "state",
+        "model",
+        "temperature",
+        "indoor_temperature",
+        "wind_speed",
+        "wind_orientation_horizontal",
+        "wind_orientation_vertical",
+        "error",
+        "code",
+    )
+    return {key: streams.get(key) for key in keys if key in streams}
