@@ -12,8 +12,7 @@ This repository is for users who own a Yair / Yangzi air conditioner controlled 
 
 ## Features
 
-- Climate entity for power, HVAC mode, target temperature, fan speed, and vertical swing.
-- Select entity for horizontal swing direction.
+- Climate entity for power, HVAC mode, target temperature, fan speed, and combined swing.
 - Sensor entities for current temperature, humidity, and diagnostic values.
 - Config flow UI.
 - `tgt` token refresh support.
@@ -122,11 +121,13 @@ The request `User-Agent` header.
 
 ## Entities
 
-The climate entity supports power, HVAC mode, target temperature, current temperature, current humidity, fan speed, and vertical swing. The target temperature range is 18-32 C with 1 C steps.
+The climate entity supports power, HVAC mode, target temperature, current temperature, current humidity, fan speed, and combined swing. The target temperature range is 18-32 C with 1 C steps.
+
+Combined swing modes are: both vertical and horizontal, vertical only, horizontal only, and off.
 
 The Yair protocol entities that were not verified as controllable, including backlight, display, powerful mode, and sleep preset, are not created.
 
-The select entity controls horizontal swing direction.
+The Yair horizontal swing control is merged into the climate entity combined swing mode, so no separate select entity is created for Yair devices.
 
 Sensor entities include current temperature, current humidity, TVOC, runtime counters, speaker raw value, MDP mode, protection state, and other diagnostic values.
 

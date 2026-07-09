@@ -114,7 +114,12 @@ class JdSmartSnapshot:
     streams: dict[str, str]
 
     @classmethod
-    def from_result(cls, result: str | dict[str, Any]) -> JdSmartSnapshot:
+    def from_result(
+        cls,
+        result: str | dict[str, Any],
+        *,
+        default_status: str = "",
+    ) -> JdSmartSnapshot:
         """Create snapshot from API result."""
         data = json.loads(result) if isinstance(result, str) else result
         streams = {
@@ -123,7 +128,7 @@ class JdSmartSnapshot:
         }
         return cls(
             digest=str(data.get("digest", "")),
-            status=str(data.get("status", "")),
+            status=str(data.get("status", default_status)),
             from_device_success=bool(data.get("fromDeviceSuccess", False)),
             streams=streams,
         )
@@ -927,7 +932,7 @@ class JdSmartClient:
             result.get("digest"),
         )
         if "streams" in result:
-            return JdSmartSnapshot.from_result(result)
+            return JdSmartSnapshot.from_result(result, default_status="1")
         if result.get("control_ret") == "done":
             return None
         if result.get("status") in (1, "1"):

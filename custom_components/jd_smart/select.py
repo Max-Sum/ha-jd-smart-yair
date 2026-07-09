@@ -44,6 +44,7 @@ async def async_setup_entry(
     async_add_entities(
         JdSmartSelect(coordinator, description)
         for coordinator in entry.runtime_data.coordinators.values()
+        if not _uses_yair_streams(coordinator)
         for description in SELECTS
     )
 
@@ -102,3 +103,9 @@ class JdSmartSelect(JdSmartEntity, SelectEntity):
     def _uses_yair_streams(self) -> bool:
         """Return whether the current snapshot uses Yair horizontal streams."""
         return "wind_orientation_horizontal" in self.streams
+
+
+def _uses_yair_streams(coordinator) -> bool:
+    """Return whether the current snapshot uses Yair stream names."""
+    streams = coordinator.data.streams if coordinator.data else {}
+    return "wind_orientation_horizontal" in streams

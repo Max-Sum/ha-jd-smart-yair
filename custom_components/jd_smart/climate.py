@@ -67,6 +67,17 @@ SWING_TO_VALUE = {
 }
 VALUE_TO_SWING = {value: key for key, value in SWING_TO_VALUE.items()}
 
+YAIR_SWING_BOTH = "上下左右"
+YAIR_SWING_VERTICAL = "仅上下"
+YAIR_SWING_HORIZONTAL = "仅左右"
+YAIR_SWING_OFF = "关闭"
+YAIR_SWING_MODES = [
+    YAIR_SWING_BOTH,
+    YAIR_SWING_VERTICAL,
+    YAIR_SWING_HORIZONTAL,
+    YAIR_SWING_OFF,
+]
+
 PRESET_TO_VALUE = {
     "off": "0",
     "normal": "1",
@@ -180,10 +191,27 @@ class JdSmartClimate(JdSmartEntity, ClimateEntity):
     @property
     def swing_mode(self) -> str | None:
         """Return swing mode."""
+        if self._uses_yair_streams:
+            horizontal = self.streams.get("wind_orientation_horizontal") == "6"
+            vertical = self.streams.get("wind_orientation_vertical") == "6"
+            if horizontal and vertical:
+                return YAIR_SWING_BOTH
+            if vertical:
+                return YAIR_SWING_VERTICAL
+            if horizontal:
+                return YAIR_SWING_HORIZONTAL
+            return YAIR_SWING_OFF
         return VALUE_TO_SWING.get(
             self.streams.get("verdir")
             or self.streams.get("wind_orientation_vertical", "")
         )
+
+    @property
+    def swing_modes(self) -> list[str]:
+        """Return available swing modes."""
+        if self._uses_yair_streams:
+            return YAIR_SWING_MODES
+        return list(SWING_TO_VALUE)
 
     @property
     def preset_mode(self) -> str | None:
@@ -236,12 +264,7 @@ class JdSmartClimate(JdSmartEntity, ClimateEntity):
     async def async_set_swing_mode(self, swing_mode: str) -> None:
         """Set swing mode."""
         if self._uses_yair_streams:
-            await self._control(
-                {
-                    "setUpOrDown": SWING_TO_VALUE[swing_mode].zfill(2),
-                    "mapTTData": "type:1:int",
-                }
-            )
+            await self._set_yair_swing_mode(swing_mode)
             return
         await self._control({"verdir": int(SWING_TO_VALUE[swing_mode])})
 
@@ -257,6 +280,25 @@ class JdSmartClimate(JdSmartEntity, ClimateEntity):
             await self.coordinator.async_control_streams(commands)
         except Exception as err:
             raise HomeAssistantError("Unable to control JD Smart") from err
+
+    async def _set_yair_swing_mode(self, swing_mode: str) -> None:
+        """Set combined Yair horizontal and vertical swing mode."""
+        if swing_mode not in YAIR_SWING_MODES:
+            raise HomeAssistantError("Unsupported swing mode")
+        vertical = swing_mode in (YAIR_SWING_BOTH, YAIR_SWING_VERTICAL)
+        horizontal = swing_mode in (YAIR_SWING_BOTH, YAIR_SWING_HORIZONTAL)
+        await self._control(
+            {
+                "setUpOrDown": "06" if vertical else "00",
+                "mapTTData": "type:1:int",
+            }
+        )
+        await self._control(
+            {
+                "setLeftOrRight": "06" if horizontal else "00",
+                "mapTTData": "type:0:int",
+            }
+        )
 
     @property
     def _uses_yair_streams(self) -> bool:
